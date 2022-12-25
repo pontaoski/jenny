@@ -130,6 +130,11 @@ module Noises =
         let redistributed = summedNoise ^ c 3.0
         redistributed
 
+    let temperatureNoise: INoise =
+        let broadNoise = OSimplex 12312 0.00135
+        let redistributed = broadNoise ^ c 2.0
+        redistributed
+
     let moistureNoise: INoise =
         let summedNoise =
             let broadNoise = Perlin 137 0.00135
@@ -232,7 +237,7 @@ let biomeColor elevation moisture =
 //     elev''''
 
 let radius =
-    5000
+    20000
 
 let size =
     radius*2
@@ -292,51 +297,38 @@ let dist x y =
     let dy = abs ((float y) - (float radius)) ** (float 2)
     sqrt (dx+dy)
 
-[<EntryPoint>]
-let main args =
+let inline compute (image: string) (pixelColor: float -> float -> Rgba32) =
     use img = new Image<Rgba32>(radius*2, radius*2)
-    use elv = new Image<Rgba32>(radius*2, radius*2)
-    use moi = new Image<Rgba32>(radius*2, radius*2)
-    use quadrants = new Image<Rgba32>(radius*2, radius*2)
-
     let ys = seq { 1..radius*2 }
     Parallel.ForEach(
         ys,
         fun (y: int) ->
             for x in 1..radius*2 do
-                if true then
-                    let x' = x - radius
-                    let y' = y - radius
-                    let px = if x' < 0 then 1f else 0f
-                    let py = if y' < 0 then 0f else 1f
-                    quadrants[x-1, y-1] <- Rgba32(px, py, 0f, 1f)
-                else
-                    quadrants[x-1, y-1] <- Rgba32(0f, 0f, 0f, 0f)
-    )
-    |> ignore
-    quadrants.Save("woot.png")
+                img[x-1, y-1] <- pixelColor x y
+    ) |> ignore
+    img.Save(image)
 
-    printfn "woot done"
+let inline greyscale (noise: INoise) (x: float) (y: float) =
+    let e = float32 <| noise.Get x y
+    Rgba32(e, e, e)
 
-    Parallel.ForEach (
-        ys,
-        fun (y: int) ->
-            for x in 1..radius*2 do
-                if true then
-                    img[x-1, y-1] <- colorAt x y
-                    let e = float32 <| elevationNoise.Get x y
-                    elv[x-1, y-1] <- Rgba32(e, e, e)
-                    let m = float32 <| moistureNoise.Get x y
-                    moi[x-1, y-1] <- Rgba32(m, m, m)
-                else
-                    img[x-1, y-1] <- Rgba32(0f, 0f, 0f, 0f)
-                    elv[x-1, y-1] <- Rgba32(0f, 0f, 0f, 0f)
-                    moi[x-1, y-1] <- Rgba32(0f, 0f, 0f, 0f)
-    )
-    |> ignore
+let colorAtNew (x: float) (y: float): Rgba32 =
+    let e = elevationNoise.Get x y
+    if e <= WaterLevel then
+        Rgba32(0f, 0f, 1f)
+    else
+        Rgba32(0f, 1f, 0f)
+    // let m = moistureNoise.Get x y
+    // let t = temperatureNoise.Get x y
+    // Rgba32(float32 e, float32 m, float32 t)
 
-    img.Save("piss.png")
-    elv.Save("elevation.png")
-    moi.Save("moisture.png")
+[<EntryPoint>]
+let main args =
+    // compute "img.png" colorAt
+    // compute "elv.png" (greyscale elevationNoise)
+    // compute "tmp.png" (greyscale temperatureNoise)
+    // compute "moi.png" (greyscale moistureNoise)
+    compute "olde.png" colorAt // colorAtNew
+
     0
 
