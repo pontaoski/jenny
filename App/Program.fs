@@ -4,6 +4,12 @@ open SixLabors.ImageSharp.PixelFormats
 open System.Threading.Tasks
 open System
 
+let radius =
+    4000
+
+let size =
+    radius*2
+
 type INoise =
     abstract member Get: x: float -> y: float -> float
 
@@ -18,8 +24,16 @@ type ScaleBias(scale: float, bias: float, inner: INoise) =
     interface INoise with
         member _.Get x y = ((inner.Get x y) * scale) + bias
 
-let lerp v0 v1 t =
+let lerp (v0: float) (v1: float) (t: float): float =
     (1.0 - t) * v0 + t * v1
+
+let destructure (c0: Rgba32) =
+    (float c0.R / 255.0, float c0.G / 255.0, float c0.B / 255.0, float c0.A / 255.0)
+
+let lerpc (c0: Rgba32) (c1: Rgba32) (t: float): Rgba32 =
+    let (r0, g0, b0, a0) = destructure c0
+    let (r1, g1, b1, a1) = destructure c1
+    Rgba32(float32 <| lerp r0 r1 t, float32 <| lerp g0 g1 t, float32 <| lerp b0 b1 t, float32 <| lerp a0 a1 t)
 
 type Blend(lhs: INoise, rhs: INoise, pos: INoise) =
     interface INoise with
@@ -68,6 +82,20 @@ type Constant(value: float) =
     interface INoise with
         member _.Get _ _ = value
 
+type YBulge(width: float, exp: float) =
+    interface INoise with
+        member _.Get _ y =
+            (((-cos( (Math.PI / (width / 2.0)) * y )) + 1.0) / 2.0) ** exp
+
+type TwoYBulges(radius: float) =
+    interface INoise with
+        member _.Get _ y =
+            let g x = (sin((Math.PI / radius) * x)) ** 18.0
+            let f x = -g(abs(x - radius))
+            f y
+
+let twoYBulges: INoise = TwoYBulges radius
+
 let Perlin (seed: int) (frequency: float) =
     let noise = FastNoiseLite seed
     noise.SetNoiseType FastNoiseLite.NoiseType.Perlin
@@ -114,7 +142,7 @@ module Noises =
 
     let elevationNoise: INoise =
         let summedNoise =
-            let broadNoise = Perlin 50 0.00135
+            let broadNoise = OSimplex 50 0.00135
             let coarseNoise = Perlin 3 0.00435
             let coarserNoise = Perlin 51239213 0.00135
             let coarsererNoise = Perlin 3021 0.00735
@@ -127,12 +155,22 @@ module Noises =
                 ridgeyNoise * c 0.1
             e / c 1.95
 
-        let redistributed = summedNoise ^ c 3.0
+        let redistributed = summedNoise ^ c 4.0
         redistributed
 
     let temperatureNoise: INoise =
-        let broadNoise = OSimplex 12312 0.00135
-        let redistributed = broadNoise ^ c 2.0
+        let summedNoise =
+            let broadNoise = YBulge (size, 0.4) // OSimplex 12312 0.00135
+            let coarseNoise = Ridged 1234 0.00135 2.0 6
+            let coarserNoise = Perlin 1245123 0.00135
+            let ridgeyNoise = Ridged 12353214 0.020 1.0 6
+            let e =
+                broadNoise +
+                coarseNoise * c 0.5 +
+                coarserNoise * c 0.25 +
+                ridgeyNoise * c 0.2
+            e / c 1.75
+        let redistributed = summedNoise ^ c 2.0
         redistributed
 
     let moistureNoise: INoise =
@@ -236,12 +274,6 @@ let biomeColor elevation moisture =
 
 //     elev''''
 
-let radius =
-    20000
-
-let size =
-    radius*2
-
 let funkysin taper length theta =
     if theta > taper && theta < length-taper then
         1.0
@@ -313,22 +345,80 @@ let inline greyscale (noise: INoise) (x: float) (y: float) =
     Rgba32(e, e, e)
 
 let colorAtNew (x: float) (y: float): Rgba32 =
+    let color r g b =
+        Rgba32(byte r, byte g, byte b)
+
     let e = elevationNoise.Get x y
     if e <= WaterLevel then
-        Rgba32(0f, 0f, 1f)
+        let t = temperatureNoise.Get x y
+        if t < 0.1 then
+            // cold ocean
+            color 0x39 0x38 0xC9
+        else if t < 0.3 then
+            // chilly ocean
+            color 0x3D 0x57 0xD6
+        else if t < 0.6 then
+            // normal ocean
+            color 0x3F 0x76 0xE4
+        else if t < 0.8 then
+            // lukewarm ocean
+            color 0x45 0xAD 0xF2
+        else
+            // warm ocean
+            color 0x43 0xD5 0xEE
+    else if e < WaterLevel+BeachLevel then
+        // beach
+        color 0xA0 0x90 0x77
     else
-        Rgba32(0f, 1f, 0f)
+        let t = temperatureNoise.Get x y
+        let m = moistureNoise.Get x y // max (moistureNoise.Get x y + twoYBulges.Get x y) 0.0
+        if t < 0.2 then
+            if m < 0.1 then
+                color 0x55 0x55 0x55 // scorched
+            else if m < 0.2 then
+                color 0x88 0x88 0x88 // bare
+            else if m < 0.5 then
+                color 0xbb 0xbb 0xaa // tundra
+            else
+                color 0xdd 0xdd 0xe4 // snow
+        else if t < 0.4 then
+            if m < 0.3 then
+                color 0x93 0xb7 0x68 // plains
+            else
+                color 0x3c 0x5e 0x53 // taiga
+        else if t < 0.7 then
+            if m < 0.25 then
+                color 0x93 0xb7 0x68 // plains
+            else if m < 0.5 then
+                color 0xb1 0xc0 0x67 // shrubland
+            else if m < 0.75 then
+                color 0x3b 0x7b 0x4e // forest
+            else
+                color 0x13 0xf9 0xb6 // swamp
+        else
+            if m < 0.25 then
+                color 0xfa 0x9a 0x24 // desert
+            else if m < 0.5 then
+                color 0xc0 0xb6 0x67 // savannah
+            else if m < 0.75 then
+                color 0x61 0xa1 0x74 // seasonal forest
+            else
+                color 0x5c 0x82 0x16 // jungle
+                // let c = (e - WaterLevel) / (1.0 - WaterLevel)
+                // Rgba32(0f, float32 c, 0f)
     // let m = moistureNoise.Get x y
     // let t = temperatureNoise.Get x y
     // Rgba32(float32 e, float32 m, float32 t)
 
 [<EntryPoint>]
 let main args =
+    printfn "Running..."
     // compute "img.png" colorAt
     // compute "elv.png" (greyscale elevationNoise)
     // compute "tmp.png" (greyscale temperatureNoise)
     // compute "moi.png" (greyscale moistureNoise)
-    compute "olde.png" colorAt // colorAtNew
+    // compute "bulge.png" (greyscale (YBulge (size, 7.0)))
+    compute "neu.png" colorAtNew
 
     0
 
