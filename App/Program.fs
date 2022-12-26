@@ -163,7 +163,7 @@ module Noises =
             let broadNoise = YBulge (size, 0.4) // OSimplex 12312 0.00135
             let coarseNoise = Ridged 1234 0.00135 2.0 6
             let coarserNoise = Perlin 1245123 0.00135
-            let ridgeyNoise = Ridged 12353214 0.020 1.0 6
+            let ridgeyNoise = Perlin 12353214 0.020 // 1.0 6
             let e =
                 broadNoise +
                 coarseNoise * c 0.5 +
@@ -178,7 +178,7 @@ module Noises =
             let broadNoise = Perlin 137 0.00135
             let coarseNoise = Ridged 1239 0.00135 2.0 6
             let coarserNoise = Perlin 1239 0.00135
-            let ridgeyNoise = Ridged 12301 0.020 1.0 6
+            let ridgeyNoise = Perlin 12301 0.020 // 1.0 6
             let e =
                 broadNoise +
                 coarseNoise * c 0.5 +
