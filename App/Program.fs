@@ -142,7 +142,7 @@ module Noises =
 
     let elevationNoise: INoise =
         let summedNoise =
-            let broadNoise = OSimplex 50 0.00135
+            let broadNoise = OSimplex 50 0.000935
             let coarseNoise = Perlin 3 0.00435
             let coarserNoise = Perlin 51239213 0.00135
             let coarsererNoise = Perlin 3021 0.00735
@@ -344,14 +344,20 @@ let inline greyscale (noise: INoise) (x: float) (y: float) =
     let e = float32 <| noise.Get x y
     Rgba32(e, e, e)
 
+let inline cutoff (cutoff: float) (noise: INoise) (x: float) (y: float) =
+    let e = if noise.Get x y < cutoff then 0f else 1f
+    Rgba32(e, e, e)
+
 let colorAtNew (x: float) (y: float): Rgba32 =
-    let color r g b =
+    let inline color r g b =
         Rgba32(byte r, byte g, byte b)
 
     let e = elevationNoise.Get x y
     if e <= WaterLevel then
         let t = temperatureNoise.Get x y
         if t < 0.1 then
+            color 0x73 0x9c 0xda
+        else if t < 0.2 then
             // cold ocean
             color 0x39 0x38 0xC9
         else if t < 0.3 then
@@ -414,7 +420,7 @@ let colorAtNew (x: float) (y: float): Rgba32 =
 let main args =
     printfn "Running..."
     // compute "img.png" colorAt
-    // compute "elv.png" (greyscale elevationNoise)
+    // compute "elv.png" (cutoff WaterLevel elevationNoise)
     // compute "tmp.png" (greyscale temperatureNoise)
     // compute "moi.png" (greyscale moistureNoise)
     // compute "bulge.png" (greyscale (YBulge (size, 7.0)))
